@@ -1,0 +1,30 @@
+{
+  "name": "supermarkt-simulator",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build && node scripts/copy-standalone.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "assets:customers": "node scripts/remove-chroma.mjs src/assets/customers-game-atlas-source.png src/assets/customers-game-atlas.png",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^6.0.3",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.1.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.10"
+  }
+}
