@@ -7,6 +7,7 @@ import {
   HELPER_INFO,
   HELPER_PRICES,
   ORDER_HELPER_INTERVAL,
+  PICKUP_HELPER_INTERVAL,
   PRODUCT_BY_ID,
   PRODUCTS,
   PRODUCTS_BY_ROOM,
@@ -242,7 +243,7 @@ function HelperStatus() {
   const lowStock = unlockedProducts.some(({ id }) => (
     state.products[id].shelf + state.products[id].storage <= shelfCapacity
   ))
-  if (!state.helpers.restock && !state.helpers.cashier && !state.helpers.order) return null
+  if (!state.helpers.restock && !state.helpers.cashier && !state.helpers.order && !state.helpers.pickup) return null
   return (
     <aside className="helper-status" aria-label="Aktive Helfer" aria-live="polite">
       {state.helpers.restock && (
@@ -258,6 +259,11 @@ function HelperStatus() {
       {state.helpers.order && (
         <div className={lowStock ? 'helper-status--busy' : ''}>
           <span>🧑‍💻</span><p><b>Bestellhilfe</b><small>{lowStock ? 'prüft den Nachschub' : 'Bestand ausreichend'}</small></p>
+        </div>
+      )}
+      {state.helpers.pickup && (
+        <div className={state.pickupOrders.length ? 'helper-status--busy' : ''}>
+          <span>🛍️</span><p><b>Online-Shop-Hilfe</b><small>{state.pickupOrders.length ? `bearbeitet ${state.pickupOrders.length} Online-Aufträge` : 'wartet auf Aufträge'}</small></p>
         </div>
       )}
     </aside>
@@ -545,7 +551,7 @@ function PickupModal({ notify }: { notify: (result: ActionResult) => void }) {
 
 function HelpersModal({ notify }: { notify: (result: ActionResult) => void }) {
   const state = useGameState()
-  const helperIds: HelperId[] = ['restock', 'cashier', 'order']
+  const helperIds: HelperId[] = ['restock', 'cashier', 'order', 'pickup']
   return (
     <ModalShell title="Helfer einstellen" icon="🧑‍💼">
       <p className="modal-intro">Stelle einmalig Mitarbeiter ein, die dir dauerhaft Arbeit im Laden abnehmen.</p>
@@ -561,8 +567,10 @@ function HelpersModal({ notify }: { notify: (result: ActionResult) => void }) {
                 <small>{id === 'restock'
                   ? 'Arbeitet alle 3 Sekunden'
                   : id === 'cashier'
-                    ? `${gameStore.getCashierDuration() / 1000} Sekunden je Einkauf`
-                    : 'Prüft alle 6 Sekunden den Bestand'}</small>
+                  ? `${gameStore.getCashierDuration() / 1000} Sekunden je Einkauf`
+                    : id === 'order'
+                      ? 'Prüft alle 6 Sekunden den Bestand'
+                      : 'Packt alle 1,5 Sekunden einen Arbeitsschritt'}</small>
               </div>
               <button disabled={hired || state.money < HELPER_PRICES[id]} onClick={() => {
                 const result = gameStore.buyHelper(id)
@@ -603,6 +611,20 @@ function HelperAutomation({ notify }: { notify: (result: ActionResult) => void }
     }, ORDER_HELPER_INTERVAL)
     return () => window.clearInterval(interval)
   }, [notify, state.helpers.order])
+
+  useEffect(() => {
+    if (!state.helpers.pickup) return
+    const interval = window.setInterval(() => {
+      const snapshot = gameStore.getSnapshot()
+      if (snapshot.screen !== 'game' || !snapshot.helpers.pickup) return
+      const result = gameStore.processPickupOrderByHelper()
+      if (result.ok && (result.message.includes('abholbereit') || result.message.includes('abgeholt'))) {
+        gameAudio.play('success')
+        notify({ ...result, message: `Online-Shop-Hilfe: ${result.message}` })
+      }
+    }, PICKUP_HELPER_INTERVAL)
+    return () => window.clearInterval(interval)
+  }, [notify, state.helpers.pickup])
 
   useEffect(() => {
     if (!state.helpers.cashier || checkoutId === undefined || state.screen !== 'game') return

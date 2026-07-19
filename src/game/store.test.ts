@@ -205,6 +205,23 @@ describe('GameStore economy and inventory', () => {
     expect(store.getSnapshot().money).toBe(STARTING_MONEY + expectedRevenue)
   })
 
+  it('lets the online-shop helper pack and hand over pickup orders automatically', () => {
+    const store = new GameStore(new MemoryStorage())
+    store.newGame(42)
+    expect(store.buyHelper('pickup').ok).toBe(true)
+    expect(store.generatePickupOrder().ok).toBe(true)
+    const order = store.getSnapshot().pickupOrders[0]
+    const expectedRevenue = getPickupOrderTotal(order)
+
+    for (let step = 0; step < order.items.length + 2; step += 1) {
+      expect(store.processPickupOrderByHelper().ok).toBe(true)
+    }
+
+    expect(store.getSnapshot().pickupOrders).toHaveLength(0)
+    expect(store.getSnapshot().stats.pickupOrdersCompleted).toBe(1)
+    expect(store.getSnapshot().money).toBe(STARTING_MONEY - HELPER_PRICES.pickup + expectedRevenue)
+  })
+
   it('persists pickup orders and limits the collection area to three orders', () => {
     const storage = new MemoryStorage()
     const store = new GameStore(storage)

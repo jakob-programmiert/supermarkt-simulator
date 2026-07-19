@@ -142,7 +142,7 @@ const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => (
     ? { shelf: 8, storage: 8 }
     : { shelf: 0, storage: 0 }),
   upgrades: { shelf: 0, storage: 0, checkout: 0 },
-  helpers: { restock: false, cashier: false, order: false },
+  helpers: { restock: false, cashier: false, order: false, pickup: false },
   stats: {
     customersServed: 0,
     customersMissed: 0,
@@ -259,6 +259,7 @@ export class GameStore {
         restock: value.helpers?.restock === true,
         cashier: value.helpers?.cashier === true,
         order: value.helpers?.order === true,
+        pickup: value.helpers?.pickup === true,
       }
       const rooms = {
         beverage: value.rooms?.beverage === true,
@@ -592,6 +593,26 @@ export class GameStore {
       },
     }, true)
     return { ok: true, message: `${order.customerName} hat Bestellung #${order.id} abgeholt · ${formatMoney(total)}.` }
+  }
+
+  processPickupOrderByHelper = (): ActionResult => {
+    if (!this.state.helpers.pickup) return { ok: false, message: 'Die Online-Shop-Hilfe wurde noch nicht eingestellt.' }
+    const readyOrder = this.state.pickupOrders.find((order) => order.status === 'ready')
+    if (readyOrder) return this.completePickupOrder(readyOrder.id)
+
+    const newOrder = this.state.pickupOrders.find((order) => order.status === 'new')
+    if (newOrder) return this.startPackingPickupOrder(newOrder.id)
+
+    for (const order of this.state.pickupOrders) {
+      if (order.status !== 'packing') continue
+      const nextProduct = order.items.find((productId) => {
+        const required = order.items.filter((item) => item === productId).length
+        const packed = order.packedItems.filter((item) => item === productId).length
+        return packed < required && this.state.products[productId].shelf > 0
+      })
+      if (nextProduct) return this.packPickupItem(order.id, nextProduct)
+    }
+    return { ok: false, message: 'Die Online-Shop-Hilfe wartet auf Ware im Regal.' }
   }
 
   setTutorialSeen = () => {

@@ -6,7 +6,7 @@ export type ProductId =
   | 'water' | 'cola' | 'lemonade' | 'appleJuice' | 'icedTea' | 'energyDrink'
   | 'eggs' | 'butter' | 'muesli' | 'coffee'
 export type UpgradeId = 'shelf' | 'storage' | 'checkout'
-export type HelperId = 'restock' | 'cashier' | 'order'
+export type HelperId = 'restock' | 'cashier' | 'order' | 'pickup'
 
 export interface ProductDefinition {
   id: ProductId
@@ -165,6 +165,7 @@ export const SELF_CHECKOUT_ASSISTED_DURATION = 1800
 export const SELF_CHECKOUT_HELP_CHANCE = 35
 export const RESTOCK_HELPER_INTERVAL = 3000
 export const ORDER_HELPER_INTERVAL = 6000
+export const PICKUP_HELPER_INTERVAL = 1500
 export const UPGRADE_PRICES: Record<UpgradeId, readonly number[]> = {
   shelf: [10_000, 20_000, 35_000, 50_000],
   storage: [12_500, 25_000, 40_000, 60_000],
@@ -181,12 +182,14 @@ export const HELPER_PRICES: Record<HelperId, number> = {
   restock: 5_000,
   cashier: 12_000,
   order: 8_000,
+  pickup: 10_000,
 }
 
 export const HELPER_INFO: Record<HelperId, { name: string; icon: string; description: string }> = {
   restock: { name: 'Regalhilfe', icon: '🧑‍🔧', description: 'Füllt die Regale aller freigeschalteten Räume automatisch auf.' },
   cashier: { name: 'Kassenhilfe', icon: '🧑‍💼', description: 'Bedient wartende Kunden automatisch. Ein besserer Scanner macht sie schneller.' },
   order: { name: 'Bestellhilfe', icon: '🧑‍💻', description: 'Bestellt automatisch neue Ware, sobald der Bestand eines freigeschalteten Produkts niedrig wird.' },
+  pickup: { name: 'Online-Shop-Hilfe', icon: '🛍️', description: 'Packt Onlinebestellungen automatisch und übergibt sie an Abholkunden.' },
 }
 
 export const formatMoney = (cents: number) =>
