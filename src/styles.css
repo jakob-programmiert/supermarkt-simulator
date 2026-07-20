@@ -869,6 +869,12 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
   .game-logo__bottom { font-size: 30px; }
 }
 
+@media (max-width: 900px) and (max-height: 560px) and (orientation: landscape) {
+  /* Reserve visible play space above the mobile action bar. Phaser's FIT mode then keeps
+     the bottom shelves and self-checkouts inside the unobstructed part of the screen. */
+  .game-canvas { bottom: max(74px, calc(64px + env(safe-area-inset-bottom))); }
+}
+
 @media (max-width: 650px) {
   .hud-secondary { display: none; }
   .bottom-toolbar { left: max(4px, env(safe-area-inset-left)); right: max(4px, env(safe-area-inset-right)); width: auto; justify-content: stretch; transform: none; }
