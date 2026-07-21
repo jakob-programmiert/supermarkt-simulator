@@ -145,11 +145,28 @@ function MenuScreen() {
 
 function TopHud() {
   const state = useGameState()
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const unlockedProducts = gameStore.getUnlockedProducts()
   const totalStock = unlockedProducts.reduce(
     (sum, { id }) => sum + state.products[id].shelf + state.products[id].storage,
     0,
   )
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement !== null)
+    syncFullscreen()
+    document.addEventListener('fullscreenchange', syncFullscreen)
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen)
+  }, [])
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await document.documentElement.requestFullscreen()
+    } catch {
+      // Some mobile browsers do not allow fullscreen in every context.
+    }
+  }
 
   return (
     <header className="top-hud">
@@ -168,6 +185,9 @@ function TopHud() {
         gameAudio.play('click')
       }} aria-label={state.soundEnabled ? 'Ton ausschalten' : 'Ton einschalten'}>
         {state.soundEnabled ? '🔊' : '🔇'}
+      </button>
+      <button className="icon-button" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? 'Vollbild verlassen' : 'Vollbild aktivieren'}>
+        {isFullscreen ? '⤢' : '⛶'}
       </button>
       <button className="icon-button" onClick={() => gameStore.openModal('settings')} aria-label="Einstellungen">⚙</button>
     </header>
