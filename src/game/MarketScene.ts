@@ -182,9 +182,9 @@ export class MarketScene extends Phaser.Scene {
   }
 
   update(time: number) {
-    if (this.simulationPaused || time < this.nextSpawnAt || this.activeCustomers >= 6) return
+    if (this.simulationPaused || time < this.nextSpawnAt || this.activeCustomers >= gameStore.getCustomerCapacity()) return
     this.spawnCustomer()
-    this.nextSpawnAt = time + 5000 + Math.floor(this.random() * 3001)
+    this.nextSpawnAt = time + gameStore.getCustomerSpawnDelay(this.random())
   }
 
   private createShelf(productId: ProductId) {
@@ -643,6 +643,7 @@ export class MarketScene extends Phaser.Scene {
         currentRow = PRODUCT_ROW[product.id]
         const gotProduct = gameStore.takeFromShelf(product.id)
         if (gotProduct) basket.push(product.id)
+        else gameStore.recordEmptyShelf()
         thought.setText(gotProduct ? `✓ ${product.emoji}  ${basket.length}` : `${product.emoji} leer`)
         this.time.delayedCall(gameStore.getSnapshot().reducedMotion ? 80 : 320, () => visitShelf(index + 1))
       })

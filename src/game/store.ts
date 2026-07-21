@@ -25,7 +25,7 @@ const SAVE_KEY = 'supermarkt-simulator-save-v1'
 const SAVE_VERSION = 1
 
 export type AppScreen = 'menu' | 'game'
-export type ModalName = 'order' | 'restock' | 'upgrades' | 'rooms' | 'pickup' | 'helpers' | 'settings' | 'help' | null
+export type ModalName = 'order' | 'restock' | 'upgrades' | 'rooms' | 'pickup' | 'helpers' | 'settings' | 'pricing' | 'help' | null
 
 export interface ProductStock {
   shelf: number
@@ -37,6 +37,7 @@ export interface CheckoutEntry {
   items: ProductId[]
   avatar: number
   depositBottles?: number
+  queuedAt?: number
 }
 
 export const SELF_CHECKOUT_STATIONS = [0, 1, 2, 3] as const
@@ -74,6 +75,8 @@ export interface GameState {
   pickupOrders: PickupOrder[]
   nextPickupOrderId: number
   money: number
+  prices: Record<ProductId, number>
+  customerSatisfaction: number
   products: Record<ProductId, ProductStock>
   upgrades: Record<UpgradeId, number>
   helpers: Record<HelperId, boolean>
@@ -101,6 +104,8 @@ interface PersistedState {
   pickupOrders: PickupOrder[]
   nextPickupOrderId: number
   money: number
+  prices: Record<ProductId, number>
+  customerSatisfaction: number
   products: Record<ProductId, ProductStock>
   upgrades: Record<UpgradeId, number>
   helpers: Record<HelperId, boolean>
@@ -127,6 +132,8 @@ export interface ActionResult {
 const productRecord = <T,>(factory: (id: ProductId) => T) =>
   Object.fromEntries(PRODUCTS.map(({ id }) => [id, factory(id)])) as Record<ProductId, T>
 
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value))
+
 const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => ({
   version: SAVE_VERSION,
   screen: 'menu',
@@ -141,6 +148,8 @@ const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => (
   products: productRecord((id) => PRODUCT_BY_ID[id].room === 'main'
     ? { shelf: 8, storage: 8 }
     : { shelf: 0, storage: 0 }),
+  prices: productRecord((id) => PRODUCT_BY_ID[id].sellPrice),
+  customerSatisfaction: 70,
   upgrades: { shelf: 0, storage: 0, checkout: 0 },
   helpers: { restock: false, cashier: false, order: false, pickup: false },
   stats: {
@@ -161,19 +170,22 @@ const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => (
 
 const isProductId = (value: string): value is ProductId => value in PRODUCT_BY_ID
 
-export const getCheckoutSubtotal = (entry: CheckoutEntry) =>
-  entry.items.reduce((sum, productId) => sum + PRODUCT_BY_ID[productId].sellPrice, 0)
+export const getProductPrice = (productId: ProductId, prices?: Record<ProductId, number>) =>
+  prices?.[productId] ?? PRODUCT_BY_ID[productId].sellPrice
+
+export const getCheckoutSubtotal = (entry: CheckoutEntry, prices?: Record<ProductId, number>) =>
+  entry.items.reduce((sum, productId) => sum + getProductPrice(productId, prices), 0)
 
 export const getDepositVoucherValue = (entry: CheckoutEntry) =>
   Math.max(0, Math.floor(entry.depositBottles ?? 0)) * 25
 
-export const getCheckoutTotal = (entry: CheckoutEntry) => {
-  const subtotal = getCheckoutSubtotal(entry)
+export const getCheckoutTotal = (entry: CheckoutEntry, prices?: Record<ProductId, number>) => {
+  const subtotal = getCheckoutSubtotal(entry, prices)
   return Math.max(0, subtotal - Math.min(subtotal, getDepositVoucherValue(entry)))
 }
 
-export const getPickupOrderTotal = (order: Pick<PickupOrder, 'items'>) =>
-  order.items.reduce((sum, productId) => sum + PRODUCT_BY_ID[productId].sellPrice, 0) + PICKUP_SERVICE_FEE
+export const getPickupOrderTotal = (order: Pick<PickupOrder, 'items'>, prices?: Record<ProductId, number>) =>
+  order.items.reduce((sum, productId) => sum + getProductPrice(productId, prices), 0) + PICKUP_SERVICE_FEE
 
 export const chooseCashBill = (total: number) =>
   [500, 1_000, 2_000, 5_000].find((bill) => bill >= total) ?? Math.ceil(total / 5_000) * 5_000
@@ -243,7 +255,7 @@ export class GameStore {
       const rawQueue = Array.isArray(value.checkoutQueue) ? value.checkoutQueue : []
       const checkoutQueue = rawQueue.flatMap((rawEntry) => {
         if (!rawEntry || typeof rawEntry !== 'object') return []
-        const candidate = rawEntry as { id?: unknown; avatar?: unknown; items?: unknown; productId?: unknown; depositBottles?: unknown }
+        const candidate = rawEntry as { id?: unknown; avatar?: unknown; items?: unknown; productId?: unknown; depositBottles?: unknown; queuedAt?: unknown }
         const items = Array.isArray(candidate.items)
           ? candidate.items.filter((item): item is ProductId => typeof item === 'string' && isProductId(item))
           : typeof candidate.productId === 'string' && isProductId(candidate.productId)
@@ -253,7 +265,10 @@ export class GameStore {
         const depositBottles = Number.isFinite(candidate.depositBottles)
           ? Math.max(0, Math.floor(candidate.depositBottles as number))
           : 0
-        return [{ id: candidate.id, avatar: candidate.avatar, items, depositBottles }]
+        const queuedAt = Number.isFinite(candidate.queuedAt)
+          ? Math.max(0, Math.floor(candidate.queuedAt as number))
+          : undefined
+        return [{ id: candidate.id, avatar: candidate.avatar, items, depositBottles, queuedAt }]
       })
       const helpers = {
         restock: value.helpers?.restock === true,
@@ -304,6 +319,15 @@ export class GameStore {
             ? { shelf: 4, storage: 5 }
             : { shelf: 0, storage: 0 }
       })
+      const prices = productRecord((id) => {
+        const price = value.prices?.[id]
+        return Number.isFinite(price)
+          ? Math.max(25, Math.min(PRODUCT_BY_ID[id].sellPrice * 5, Math.round(price)))
+          : PRODUCT_BY_ID[id].sellPrice
+      })
+      const customerSatisfaction = Number.isFinite(value.customerSatisfaction)
+        ? Math.max(5, Math.min(100, Math.round(value.customerSatisfaction)))
+        : 70
       const sold = productRecord((id) => {
         const amount = value.stats?.sold?.[id]
         return Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
@@ -331,6 +355,9 @@ export class GameStore {
           depositBottles: Number.isFinite(candidate.depositBottles)
             ? Math.max(0, Math.floor(candidate.depositBottles as number))
             : 0,
+          queuedAt: Number.isFinite(candidate.queuedAt)
+            ? Math.max(0, Math.floor(candidate.queuedAt as number))
+            : undefined,
           station,
           status: candidate.status === 'help' ? 'help' : 'scanning',
           needsHelp: candidate.needsHelp === true,
@@ -345,6 +372,8 @@ export class GameStore {
         pickupOrders,
         nextPickupOrderId,
         products,
+        prices,
+        customerSatisfaction,
         stats,
         helpers,
         checkoutQueue,
@@ -363,6 +392,8 @@ export class GameStore {
       pickupOrders,
       nextPickupOrderId,
       money,
+      prices,
+      customerSatisfaction,
       products,
       upgrades,
       helpers,
@@ -382,6 +413,8 @@ export class GameStore {
       pickupOrders,
       nextPickupOrderId,
       money,
+      prices,
+      customerSatisfaction,
       products,
       upgrades,
       helpers,
@@ -575,7 +608,7 @@ export class GameStore {
     const order = this.state.pickupOrders.find(({ id }) => id === orderId)
     if (!order) return { ok: false, message: 'Diese Bestellung wurde bereits abgeholt.' }
     if (order.status !== 'ready') return { ok: false, message: 'Packe zuerst alle bestellten Artikel ein.' }
-    const total = getPickupOrderTotal(order)
+    const total = getPickupOrderTotal(order, this.state.prices)
     const sold = { ...this.state.stats.sold }
     order.items.forEach((productId) => { sold[productId] += 1 })
     const bottles = order.items.reduce((sum, productId) => sum + (PRODUCT_BY_ID[productId].deposit ? 1 : 0), 0)
@@ -632,6 +665,48 @@ export class GameStore {
   getScanDuration = () => CHECKOUT_DURATION[this.state.upgrades.checkout]
   getCashierDuration = () => CASHIER_DURATION[this.state.upgrades.checkout]
   getStorageTotal = () => this.getUnlockedProducts().reduce((sum, { id }) => sum + this.state.products[id].storage, 0)
+  getProductPrice = (productId: ProductId) => this.state.prices[productId]
+
+  getShelfFill = () => {
+    const products = this.getUnlockedProducts()
+    if (!products.length) return 0
+    const capacity = this.getShelfCapacity()
+    return products.reduce((sum, { id }) => sum + this.state.products[id].shelf / capacity, 0) / products.length
+  }
+
+  getCustomerDemand = () => {
+    const roomProducts = this.getCurrentRoomProducts()
+    const averagePriceRatio = roomProducts.reduce(
+      (sum, { id, sellPrice }) => sum + this.state.prices[id] / sellPrice,
+      0,
+    ) / Math.max(1, roomProducts.length)
+    const serviceFactor = 0.4 + this.state.customerSatisfaction / 100
+    const priceFactor = clamp(1 - (averagePriceRatio - 1) * 1.2, 0.25, 2.3)
+    const shelfFactor = 0.35 + this.getShelfFill() * 0.9
+    return clamp(serviceFactor * priceFactor * shelfFactor, 0.25, 2.5)
+  }
+
+  getCustomerSpawnDelay = (variation: number) => {
+    const baseDelay = 6_500 + clamp(variation, 0, 1) * 2_500
+    return Math.round(clamp(baseDelay / this.getCustomerDemand(), 2_600, 16_000))
+  }
+
+  getCustomerCapacity = () => Math.round(clamp(4 + this.getCustomerDemand() * 2, 4, 9))
+
+  updateProductPrice = (productId: ProductId, price: number): ActionResult => {
+    if (!this.isProductUnlocked(productId)) return { ok: false, message: 'Dieses Produkt ist noch nicht freigeschaltet.' }
+    const maximum = PRODUCT_BY_ID[productId].sellPrice * 5
+    const nextPrice = Math.round(clamp(price, 25, maximum))
+    if (nextPrice === this.state.prices[productId]) return { ok: false, message: 'Dieser Preis ist bereits eingestellt.' }
+    this.setState({
+      ...this.state,
+      prices: { ...this.state.prices, [productId]: nextPrice },
+    }, true)
+    return { ok: true, message: `${PRODUCT_BY_ID[productId].name}: ${formatMoney(nextPrice)} eingestellt.` }
+  }
+
+  private nextCustomerSatisfaction = (change: number) =>
+    Math.round(clamp(this.state.customerSatisfaction + change, 5, 100))
 
   orderProduct = (productId: ProductId): ActionResult => {
     if (!this.isProductUnlocked(productId)) return { ok: false, message: 'Dieses Produkt ist noch nicht freigeschaltet.' }
@@ -713,9 +788,17 @@ export class GameStore {
     return true
   }
 
+  recordEmptyShelf = () => {
+    this.setState({
+      ...this.state,
+      customerSatisfaction: this.nextCustomerSatisfaction(-3),
+    }, true)
+  }
+
   markCustomerMissed = () => {
     this.setState({
       ...this.state,
+      customerSatisfaction: this.nextCustomerSatisfaction(-8),
       stats: { ...this.state.stats, customersMissed: this.state.stats.customersMissed + 1 },
     }, true)
   }
@@ -741,6 +824,7 @@ export class GameStore {
       ...entry,
       items: [...entry.items],
       depositBottles: Math.max(0, Math.floor(entry.depositBottles ?? 0)),
+      queuedAt: entry.queuedAt ?? Date.now(),
       station,
       status: 'scanning',
       needsHelp: issueRoll % 100 < SELF_CHECKOUT_HELP_CHANCE,
@@ -770,8 +854,16 @@ export class GameStore {
   }
 
   private completeSale = (entry: CheckoutEntry, changes: Partial<GameState>): ActionResult => {
-    const total = getCheckoutTotal(entry)
-    const voucherValue = Math.min(getCheckoutSubtotal(entry), getDepositVoucherValue(entry))
+    const total = getCheckoutTotal(entry, this.state.prices)
+    const voucherValue = Math.min(getCheckoutSubtotal(entry, this.state.prices), getDepositVoucherValue(entry))
+    const waitMs = entry.queuedAt ? Date.now() - entry.queuedAt : 0
+    const shelfFill = this.getShelfFill()
+    const serviceChange = waitMs > 25_000
+      ? -8
+      : waitMs > 12_000
+        ? -4
+        : 2
+    const stockChange = shelfFill < 0.25 ? -3 : shelfFill > 0.7 ? 1 : 0
     const returnedLater = entry.items.reduce(
       (sum, productId) => sum + (PRODUCT_BY_ID[productId].deposit ? 1 : 0),
       0,
@@ -782,6 +874,7 @@ export class GameStore {
       ...this.state,
       ...changes,
       money: this.state.money + total,
+      customerSatisfaction: this.nextCustomerSatisfaction(serviceChange + stockChange),
       returnableBottles: this.state.returnableBottles + returnedLater,
       stats: {
         ...this.state.stats,
@@ -804,6 +897,7 @@ export class GameStore {
       ...entry,
       items: [...entry.items],
       depositBottles: Math.max(0, Math.floor(entry.depositBottles ?? 0)),
+      queuedAt: entry.queuedAt ?? Date.now(),
     }
     this.setState({ ...this.state, checkoutQueue: [...this.state.checkoutQueue, safeEntry] }, true)
   }

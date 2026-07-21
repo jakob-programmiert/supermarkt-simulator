@@ -118,6 +118,26 @@ describe('GameStore economy and inventory', () => {
     expect(parseMoneyInput('zweifünfzig')).toBeNull()
   })
 
+  it('adjusts customer demand through prices, shelf availability and service', () => {
+    const store = new GameStore(new MemoryStorage())
+    store.newGame(42)
+    const normalDemand = store.getCustomerDemand()
+
+    expect(store.updateProductPrice('bread', 100).ok).toBe(true)
+    expect(store.getCustomerDemand()).toBeGreaterThan(normalDemand)
+    expect(store.updateProductPrice('bread', 1_000).ok).toBe(true)
+    expect(store.getCustomerDemand()).toBeLessThan(normalDemand)
+
+    const beforeEmptyShelves = store.getCustomerDemand()
+    for (let index = 0; index < 6; index += 1) store.recordEmptyShelf()
+    expect(store.getCustomerDemand()).toBeLessThan(beforeEmptyShelves)
+
+    const satisfactionBeforeLongWait = store.getSnapshot().customerSatisfaction
+    store.enqueueCheckout({ id: 99, items: ['bread'], avatar: 0, queuedAt: Date.now() - 30_000 })
+    expect(store.completeCheckout().ok).toBe(true)
+    expect(store.getSnapshot().customerSatisfaction).toBeLessThan(satisfactionBeforeLongWait)
+  })
+
   it('values each returned bottle at 25 cents and deducts the voucher', () => {
     const entry = { id: 2, items: ['bread', 'milk'] as const, avatar: 1, depositBottles: 3 }
     const checkout = { ...entry, items: [...entry.items] }

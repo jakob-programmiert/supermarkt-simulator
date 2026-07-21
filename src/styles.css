@@ -675,6 +675,19 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
 .setting-row span { display: grid; }
 .setting-row small { color: #687b77; }
 .setting-row input { width: 28px; height: 28px; accent-color: var(--green); }
+.setting-row--button { width: 100%; color: var(--navy); text-align: left; }
+.setting-row--button:hover { border-color: #d3a83c; background: #fff2ca; }
+.setting-row--button i { color: #a77820; font-size: 28px; font-style: normal; font-weight: 900; }
+.pricing-summary { display: grid; grid-template-columns: 50px 1fr; align-items: center; gap: 11px; margin-bottom: 14px; padding: 12px; border-radius: 14px; color: white; background: linear-gradient(135deg, #315f5b, #173c3a); }
+.pricing-summary > span { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 13px; background: rgba(255,255,255,.14); font-size: 27px; }
+.pricing-summary > div { display: grid; gap: 3px; }.pricing-summary small { color: #cae2dd; font-size: 12px; }
+.pricing-list { display: grid; gap: 9px; }
+.pricing-card { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px; border: 1px solid #ded2b7; border-radius: 14px; background: linear-gradient(145deg, white, #fff7e7); }
+.pricing-card > div:nth-child(2) { display: grid; min-width: 0; }.pricing-card > div:nth-child(2) > b { font-size: 16px; }.pricing-card > div:nth-child(2) small { color: #657a75; font-size: 11px; }
+.price-controls { display: grid; grid-template-columns: 82px 92px 82px; gap: 5px; align-items: center; }
+.price-controls button { min-height: 34px; padding: 4px 6px; border: 1px solid #b9a77b; border-radius: 8px; color: #5e481a; background: #fff1c7; font-size: 10px; font-weight: 900; }
+.price-controls button:hover { background: #ffdc79; }.price-controls strong { color: var(--green-dark); font-size: 14px; text-align: center; white-space: nowrap; }
+.price-controls .price-reset { grid-column: 1 / -1; min-height: 27px; color: #48615d; background: #edf5ee; }
 .danger-button { width: 100%; margin-top: 22px; border-radius: 12px; color: white; background: var(--red); font-weight: 900; }
 
 .tutorial-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
@@ -890,6 +903,8 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
   .helper-card h3 { font-size: 17px; }
   .helper-card p { min-height: 0; margin: 2px 0; font-size: 11px; }
   .helper-card button { font-size: 11px; }
+  .pricing-card { grid-template-columns: 48px minmax(0, 1fr); gap: 7px; }
+  .price-controls { grid-column: 1 / -1; grid-template-columns: 1fr 90px 1fr; }
 }
 
 @media (max-width: 560px), (max-height: 440px) and (max-width: 900px) {

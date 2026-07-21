@@ -204,6 +204,7 @@ function GoalCard() {
       <div className="goal-row"><span>Kunden bedienen</span><b>{state.stats.customersServed}</b></div>
       <div className="goal-row"><span>Waren im Regal</span><b>{shelfTotal}</b></div>
       <div className="goal-row"><span>Umsatz</span><b>{formatMoney(state.stats.revenue)}</b></div>
+      <div className="goal-row"><span>Kundennachfrage</span><b>{Math.round(gameStore.getCustomerDemand() * 100)}%</b></div>
       <div className="goal-row"><span>Abholaufträge</span><b>{state.pickupOrders.length}</b></div>
       {state.activeRoom === 'beverage' && (
         <div className="goal-row"><span>Künftige Rückgaben</span><b>{state.returnableBottles}</b></div>
@@ -336,7 +337,7 @@ function OrderModal({ notify }: { notify: (result: ActionResult) => void }) {
               <ProductIcon productId={product.id} />
               <div className="product-card__content">
                 <h3>{product.name}</h3>
-                <p>{formatMoney(product.sellPrice)} Verkauf</p>
+                <p>{formatMoney(state.prices[product.id])} Verkauf</p>
                 <small>Im Lager: {state.products[product.id].storage}</small>
               </div>
               <button disabled={disabled} onClick={() => {
@@ -522,7 +523,7 @@ function PickupModal({ notify }: { notify: (result: ActionResult) => void }) {
               else result.push({ productId, required: 1 })
               return result
             }, [])
-            const total = getPickupOrderTotal(order)
+            const total = getPickupOrderTotal(order, state.prices)
             return (
               <article className={`pickup-order pickup-order--${order.status}`} key={order.id}>
                 <header>
@@ -750,6 +751,46 @@ function SelfCheckoutAlerts({ notify }: { notify: (result: ActionResult) => void
   )
 }
 
+function PricingModal({ notify }: { notify: (result: ActionResult) => void }) {
+  const state = useGameState()
+  const products = gameStore.getCurrentRoomProducts()
+  const demand = Math.round(gameStore.getCustomerDemand() * 100)
+
+  const changePrice = (productId: ProductId, price: number) => {
+    const result = gameStore.updateProductPrice(productId, price)
+    gameAudio.play('click')
+    notify(result)
+  }
+
+  return (
+    <ModalShell title="Preise & Nachfrage" icon="🏷️">
+      <div className="pricing-summary">
+        <span>📈</span>
+        <div><b>Aktuelle Kundennachfrage: {demand}%</b><small>Günstige Preise, volle Regale und schneller Service ziehen mehr Kunden an.</small></div>
+      </div>
+      <div className="pricing-list">
+        {products.map((product) => {
+          const price = state.prices[product.id]
+          const standard = product.sellPrice
+          const isStandard = price === standard
+          return (
+            <article className="pricing-card" key={product.id}>
+              <ProductIcon productId={product.id} size="small" />
+              <div><b>{product.name}</b><small>Standard: {formatMoney(standard)} · Einkauf: {formatMoney(product.buyPrice)}</small></div>
+              <div className="price-controls">
+                <button onClick={() => changePrice(product.id, price - 10)} aria-label={`${product.name} um 10 Cent günstiger`}>− 10 ct</button>
+                <strong>{formatMoney(price)}</strong>
+                <button onClick={() => changePrice(product.id, price + 10)} aria-label={`${product.name} um 10 Cent teurer`}>+ 10 ct</button>
+                {!isStandard && <button className="price-reset" onClick={() => changePrice(product.id, standard)}>Standard</button>}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </ModalShell>
+  )
+}
+
 function SettingsModal() {
   const state = useGameState()
   return (
@@ -763,6 +804,9 @@ function SettingsModal() {
           <span><b>Weniger Bewegung</b><small>Kunden bewegen sich deutlich schneller</small></span>
           <input type="checkbox" checked={state.reducedMotion} onChange={() => gameStore.toggleReducedMotion()} />
         </label>
+        <button className="setting-row setting-row--button" onClick={() => gameStore.openModal('pricing')}>
+          <span><b>Preise & Nachfrage</b><small>Verkaufspreise festlegen und Kundenzahl beeinflussen</small></span><i>›</i>
+        </button>
       </div>
       {state.hasSave && (
         <button className="danger-button" onClick={() => {
@@ -826,9 +870,9 @@ function CheckoutModal({ notify }: { notify: (result: ActionResult) => void }) {
 
   if (!entry || state.helpers.cashier) return null
   const duration = gameStore.getScanDuration()
-  const subtotal = getCheckoutSubtotal(entry)
+  const subtotal = getCheckoutSubtotal(entry, state.prices)
   const voucherValue = Math.min(subtotal, getDepositVoucherValue(entry))
-  const total = getCheckoutTotal(entry)
+  const total = getCheckoutTotal(entry, state.prices)
   const cashBill = chooseCashBill(total)
   const expectedChange = cashBill - total
   const allScanned = entry.items.every((_, index) => scanned[index])
@@ -942,7 +986,7 @@ function CheckoutModal({ notify }: { notify: (result: ActionResult) => void }) {
             {receiptLines.map(({ product, amount }) => (
               <span className="receipt-line" key={product.id}>
                 <span>{amount}× {product.name}</span>
-                <b>{formatMoney(product.sellPrice * amount)}</b>
+                <b>{formatMoney(state.prices[product.id] * amount)}</b>
               </span>
             ))}
             {voucherValue > 0 && (
@@ -1060,6 +1104,7 @@ export default function App() {
     <>
       {state.screen === 'menu' ? <MenuScreen /> : <GameScreen notify={notify} />}
       {state.modal === 'settings' && <SettingsModal />}
+      {state.modal === 'pricing' && <PricingModal notify={notify} />}
       <Toast toast={toast} />
       <RotateOverlay />
     </>
