@@ -25,7 +25,38 @@ const SAVE_KEY = 'supermarkt-simulator-save-v1'
 const SAVE_VERSION = 1
 
 export type AppScreen = 'menu' | 'game'
-export type ModalName = 'order' | 'restock' | 'upgrades' | 'rooms' | 'pickup' | 'helpers' | 'settings' | 'pricing' | 'help' | null
+export type ModalName = 'order' | 'restock' | 'upgrades' | 'rooms' | 'pickup' | 'helpers' | 'management' | 'settings' | 'pricing' | 'help' | null
+
+export type BusinessStrategy = 'value' | 'regional' | 'premium'
+export type SpecialistId = 'logistics' | 'marketing' | 'quality' | 'analytics'
+export type FranchiseId = 'discount' | 'bio' | 'express' | 'premium'
+export type MarketEventId = 'heatwave' | 'festival' | 'shortage' | 'recall'
+
+export interface MarketEvent {
+  id: MarketEventId
+  choice: 'safe' | 'bold' | null
+}
+
+export interface MarketBoost {
+  label: string
+  salesRemaining: number
+  revenuePercent: number
+  satisfaction: number
+}
+
+export interface BusinessState {
+  strategy: BusinessStrategy | null
+  franchises: FranchiseId[]
+  specialists: Record<SpecialistId, boolean>
+  ownBrandLevel: number
+  marketShare: number
+  reputation: number
+  prestige: number
+  completedContracts: string[]
+  activeEvent: MarketEvent | null
+  eventCursor: number
+  marketBoost: MarketBoost | null
+}
 
 export interface ProductStock {
   shelf: number
@@ -80,6 +111,7 @@ export interface GameState {
   products: Record<ProductId, ProductStock>
   upgrades: Record<UpgradeId, number>
   helpers: Record<HelperId, boolean>
+  business: BusinessState
   stats: {
     customersServed: number
     customersMissed: number
@@ -109,6 +141,7 @@ interface PersistedState {
   products: Record<ProductId, ProductStock>
   upgrades: Record<UpgradeId, number>
   helpers: Record<HelperId, boolean>
+  business: BusinessState
   stats: GameState['stats']
   checkoutQueue: CheckoutEntry[]
   selfCheckouts: [SelfCheckoutEntry | null, SelfCheckoutEntry | null, SelfCheckoutEntry | null, SelfCheckoutEntry | null]
@@ -134,6 +167,20 @@ const productRecord = <T,>(factory: (id: ProductId) => T) =>
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value))
 
+const createBusinessState = (): BusinessState => ({
+  strategy: null,
+  franchises: [],
+  specialists: { logistics: false, marketing: false, quality: false, analytics: false },
+  ownBrandLevel: 0,
+  marketShare: 3,
+  reputation: 40,
+  prestige: 0,
+  completedContracts: [],
+  activeEvent: null,
+  eventCursor: 0,
+  marketBoost: null,
+})
+
 const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => ({
   version: SAVE_VERSION,
   screen: 'menu',
@@ -152,6 +199,7 @@ const createInitialState = (hasSave = false, seed = 2_026_071_4): GameState => (
   customerSatisfaction: 70,
   upgrades: { shelf: 0, storage: 0, checkout: 0 },
   helpers: { restock: false, cashier: false, order: false, pickup: false },
+  business: createBusinessState(),
   stats: {
     customersServed: 0,
     customersMissed: 0,
@@ -276,6 +324,35 @@ export class GameStore {
         order: value.helpers?.order === true,
         pickup: value.helpers?.pickup === true,
       }
+      const rawBusiness = value.business
+      const business: BusinessState = {
+        ...createBusinessState(),
+        ...(rawBusiness && typeof rawBusiness === 'object' ? rawBusiness : {}),
+        strategy: rawBusiness?.strategy === 'value' || rawBusiness?.strategy === 'regional' || rawBusiness?.strategy === 'premium'
+          ? rawBusiness.strategy : null,
+        franchises: Array.isArray(rawBusiness?.franchises)
+          ? rawBusiness.franchises.filter((id): id is FranchiseId => id === 'discount' || id === 'bio' || id === 'express' || id === 'premium').slice(0, 3)
+          : [],
+        specialists: {
+          logistics: rawBusiness?.specialists?.logistics === true,
+          marketing: rawBusiness?.specialists?.marketing === true,
+          quality: rawBusiness?.specialists?.quality === true,
+          analytics: rawBusiness?.specialists?.analytics === true,
+        },
+        ownBrandLevel: clamp(Number.isFinite(rawBusiness?.ownBrandLevel) ? Math.floor(rawBusiness.ownBrandLevel) : 0, 0, 3),
+        marketShare: clamp(Number.isFinite(rawBusiness?.marketShare) ? Math.round(rawBusiness.marketShare) : 3, 0, 100),
+        reputation: clamp(Number.isFinite(rawBusiness?.reputation) ? Math.round(rawBusiness.reputation) : 40, 0, 100),
+        prestige: Math.max(0, Number.isFinite(rawBusiness?.prestige) ? Math.floor(rawBusiness.prestige) : 0),
+        completedContracts: Array.isArray(rawBusiness?.completedContracts)
+          ? rawBusiness.completedContracts.filter((id): id is string => typeof id === 'string').slice(0, 30) : [],
+        activeEvent: rawBusiness?.activeEvent && ['heatwave', 'festival', 'shortage', 'recall'].includes(rawBusiness.activeEvent.id)
+          ? { id: rawBusiness.activeEvent.id as MarketEventId, choice: rawBusiness.activeEvent.choice === 'safe' || rawBusiness.activeEvent.choice === 'bold' ? rawBusiness.activeEvent.choice : null }
+          : null,
+        eventCursor: Math.max(0, Number.isFinite(rawBusiness?.eventCursor) ? Math.floor(rawBusiness.eventCursor) : 0),
+        marketBoost: rawBusiness?.marketBoost && typeof rawBusiness.marketBoost.label === 'string'
+          ? { label: rawBusiness.marketBoost.label.slice(0, 80), salesRemaining: Math.max(0, Math.floor(rawBusiness.marketBoost.salesRemaining ?? 0)), revenuePercent: clamp(Math.round(rawBusiness.marketBoost.revenuePercent ?? 0), 0, 100), satisfaction: clamp(Math.round(rawBusiness.marketBoost.satisfaction ?? 0), -20, 20) }
+          : null,
+      }
       const rooms = {
         beverage: value.rooms?.beverage === true,
         fresh: value.rooms?.fresh === true,
@@ -376,6 +453,7 @@ export class GameStore {
         customerSatisfaction,
         stats,
         helpers,
+        business,
         checkoutQueue,
         selfCheckouts,
       }
@@ -397,6 +475,7 @@ export class GameStore {
       products,
       upgrades,
       helpers,
+      business,
       stats,
       checkoutQueue,
       selfCheckouts,
@@ -418,6 +497,7 @@ export class GameStore {
       products,
       upgrades,
       helpers,
+      business,
       stats,
       checkoutQueue,
       selfCheckouts,
@@ -683,7 +763,11 @@ export class GameStore {
     const serviceFactor = 0.4 + this.state.customerSatisfaction / 100
     const priceFactor = clamp(1 - (averagePriceRatio - 1) * 1.2, 0.25, 2.3)
     const shelfFactor = 0.35 + this.getShelfFill() * 0.9
-    return clamp(serviceFactor * priceFactor * shelfFactor, 0.25, 2.5)
+    const business = this.state.business
+    const strategyBonus = business.strategy === 'value' ? 0.14 : business.strategy === 'regional' ? 0.08 : business.strategy === 'premium' ? 0.03 : 0
+    const networkBonus = business.franchises.length * 0.04
+    const expertBonus = (business.specialists.marketing ? 0.12 : 0) + business.prestige * 0.04
+    return clamp(serviceFactor * priceFactor * shelfFactor * (1 + strategyBonus + networkBonus + expertBonus), 0.25, 3.4)
   }
 
   getCustomerSpawnDelay = (variation: number) => {
@@ -692,6 +776,129 @@ export class GameStore {
   }
 
   getCustomerCapacity = () => Math.round(clamp(4 + this.getCustomerDemand() * 2, 4, 9))
+
+  chooseBusinessStrategy = (strategy: BusinessStrategy): ActionResult => {
+    if (this.state.business.strategy) return { ok: false, message: 'Dein Unternehmenskonzept steht bereits fest.' }
+    const cost = 15_000
+    if (this.state.money < cost) return { ok: false, message: 'Für die Marktanalyse fehlen noch Mittel.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money - cost,
+      business: { ...this.state.business, strategy, reputation: this.state.business.reputation + 6 },
+    }, true)
+    return { ok: true, message: 'Unternehmenskonzept festgelegt. Dein Markt hebt sich jetzt von der Konkurrenz ab.' }
+  }
+
+  openFranchise = (franchise: FranchiseId): ActionResult => {
+    const prices: Record<FranchiseId, number> = { discount: 35_000, bio: 50_000, express: 65_000, premium: 85_000 }
+    if (!this.state.business.strategy) return { ok: false, message: 'Lege zuerst ein Unternehmenskonzept fest.' }
+    if (this.state.business.franchises.includes(franchise)) return { ok: false, message: 'Diese Filiale gehört bereits zu deinem Konzern.' }
+    if (this.state.business.franchises.length >= 3) return { ok: false, message: 'Dein Regionalmanagement ist mit drei Filialen vorerst ausgelastet.' }
+    if (this.state.money < prices[franchise]) return { ok: false, message: 'Für diese Filiale reicht das Investitionsbudget noch nicht.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money - prices[franchise],
+      business: {
+        ...this.state.business,
+        franchises: [...this.state.business.franchises, franchise],
+        marketShare: clamp(this.state.business.marketShare + 4, 0, 100),
+        reputation: clamp(this.state.business.reputation + 3, 0, 100),
+      },
+    }, true)
+    return { ok: true, message: 'Neue Filiale eröffnet! Ihr Netzwerk stärkt Marktanteil und Nachfrage.' }
+  }
+
+  hireSpecialist = (specialist: SpecialistId): ActionResult => {
+    const prices: Record<SpecialistId, number> = { logistics: 24_000, marketing: 30_000, quality: 32_000, analytics: 28_000 }
+    if (this.state.business.specialists[specialist]) return { ok: false, message: 'Diese Spezialistin bzw. dieser Spezialist arbeitet bereits für dich.' }
+    if (this.state.money < prices[specialist]) return { ok: false, message: 'Dafür reicht das Unternehmensbudget noch nicht.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money - prices[specialist],
+      business: { ...this.state.business, specialists: { ...this.state.business.specialists, [specialist]: true } },
+    }, true)
+    return { ok: true, message: 'Spezialist eingestellt. Die Konzernleitung gewinnt eine neue Stärke.' }
+  }
+
+  upgradeOwnBrand = (): ActionResult => {
+    const prices = [25_000, 55_000, 100_000]
+    const level = this.state.business.ownBrandLevel
+    if (!this.state.business.strategy) return { ok: false, message: 'Definiere zuerst, wofür deine Marke steht.' }
+    if (level >= prices.length) return { ok: false, message: 'Deine Eigenmarke ist bereits auf ihrem höchsten Niveau.' }
+    if (this.state.money < prices[level]) return { ok: false, message: 'Für die Produktentwicklung fehlen noch Mittel.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money - prices[level],
+      business: { ...this.state.business, ownBrandLevel: level + 1, reputation: clamp(this.state.business.reputation + 4, 0, 100) },
+    }, true)
+    return { ok: true, message: 'Eigenmarke ausgebaut: Jeder Verkauf wird jetzt profitabler.' }
+  }
+
+  startMarketEvent = (): ActionResult => {
+    if (this.state.business.activeEvent) return { ok: false, message: 'Ein Marktgeschehen braucht noch deine Entscheidung.' }
+    const events: MarketEventId[] = ['heatwave', 'festival', 'shortage', 'recall']
+    const id = events[(this.state.seed + this.state.business.eventCursor) % events.length]
+    this.setState({ ...this.state, business: { ...this.state.business, activeEvent: { id, choice: null }, eventCursor: this.state.business.eventCursor + 1 } }, true)
+    return { ok: true, message: 'Neue Marktchance entdeckt. Entscheide, wie dein Unternehmen reagiert.' }
+  }
+
+  resolveMarketEvent = (choice: 'safe' | 'bold'): ActionResult => {
+    const event = this.state.business.activeEvent
+    if (!event) return { ok: false, message: 'Im Moment steht keine Marktentscheidung an.' }
+    const safe = choice === 'safe'
+    const definitions: Record<MarketEventId, { label: string; safe: MarketBoost; bold: MarketBoost }> = {
+      heatwave: { label: 'Hitzewelle', safe: { label: 'Sommer-Sortiment', salesRemaining: 16, revenuePercent: 10, satisfaction: 2 }, bold: { label: 'Große Sommeroffensive', salesRemaining: 28, revenuePercent: 18, satisfaction: -1 } },
+      festival: { label: 'Stadtfest', safe: { label: 'Stadtfest-Stand', salesRemaining: 14, revenuePercent: 12, satisfaction: 3 }, bold: { label: 'Festival-Hauptpartner', salesRemaining: 25, revenuePercent: 21, satisfaction: -2 } },
+      shortage: { label: 'Lieferengpass', safe: { label: 'Faire Ersatzlieferung', salesRemaining: 12, revenuePercent: 7, satisfaction: 5 }, bold: { label: 'Knappheitsmarge', salesRemaining: 18, revenuePercent: 16, satisfaction: -5 } },
+      recall: { label: 'Produktrückruf', safe: { label: 'Vorbildlicher Rückruf', salesRemaining: 10, revenuePercent: 5, satisfaction: 7 }, bold: { label: 'Schnelle Umstellung', salesRemaining: 18, revenuePercent: 13, satisfaction: -4 } },
+    }
+    const boost = definitions[event.id][safe ? 'safe' : 'bold']
+    const cost = safe ? 7_500 : 0
+    if (this.state.money < cost) return { ok: false, message: 'Für die sichere Lösung fehlen noch Mittel.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money - cost,
+      business: { ...this.state.business, activeEvent: null, marketBoost: boost, reputation: clamp(this.state.business.reputation + boost.satisfaction, 0, 100) },
+    }, true)
+    return { ok: true, message: `${definitions[event.id].label}: Entscheidung umgesetzt. Der Effekt gilt für die nächsten ${boost.salesRemaining} Verkäufe.` }
+  }
+
+  claimBusinessContract = (contractId: string): ActionResult => {
+    const business = this.state.business
+    if (business.completedContracts.includes(contractId)) return { ok: false, message: 'Diesen Großauftrag hast du bereits abgeschlossen.' }
+    const conditions: Record<string, { done: boolean; reward: number; reputation: number; label: string }> = {
+      neighborhood: { done: this.state.stats.customersServed >= 50 && this.state.customerSatisfaction >= 75, reward: 30_000, reputation: 6, label: 'Nachbarschaftsauftrag' },
+      supplier: { done: this.state.rooms.beverage && this.state.rooms.fresh && this.state.stats.revenue >= 120_000, reward: 55_000, reputation: 8, label: 'Regionaler Liefervertrag' },
+      leader: { done: business.marketShare >= 18 && business.franchises.length >= 2, reward: 90_000, reputation: 10, label: 'Bezirkspartnerschaft' },
+    }
+    const contract = conditions[contractId]
+    if (!contract || !contract.done) return { ok: false, message: 'Die Voraussetzungen für diesen Auftrag sind noch nicht erfüllt.' }
+    this.setState({
+      ...this.state,
+      money: this.state.money + contract.reward,
+      business: { ...business, completedContracts: [...business.completedContracts, contractId], reputation: clamp(business.reputation + contract.reputation, 0, 100), marketShare: clamp(business.marketShare + 2, 0, 100) },
+    }, true)
+    return { ok: true, message: `${contract.label} abgeschlossen: ${formatMoney(contract.reward)} Prämie erhalten.` }
+  }
+
+  startNewRegion = (): ActionResult => {
+    const business = this.state.business
+    if (this.state.money < 250_000 || business.franchises.length < 2 || business.ownBrandLevel < 2) {
+      return { ok: false, message: 'Für eine neue Region brauchst du 2 Filialen, Eigenmarke Stufe 2 und 2.500 € Kapital.' }
+    }
+    const region = createInitialState(true, (this.state.seed + 1) >>> 0)
+    this.setState({
+      ...region,
+      screen: 'game',
+      modal: null,
+      soundEnabled: this.state.soundEnabled,
+      reducedMotion: this.state.reducedMotion,
+      tutorialSeen: true,
+      money: STARTING_MONEY + (business.prestige + 1) * 5_000,
+      business: { ...createBusinessState(), prestige: business.prestige + 1, reputation: 45 },
+    }, true)
+    return { ok: true, message: 'Neue Region gegründet! Dein Konzernruf gibt dir dauerhaft mehr Nachfrage.' }
+  }
 
   updateProductPrice = (productId: ProductId, price: number): ActionResult => {
     if (!this.isProductUnlocked(productId)) return { ok: false, message: 'Dieses Produkt ist noch nicht freigeschaltet.' }
@@ -870,16 +1077,37 @@ export class GameStore {
     )
     const sold = { ...this.state.stats.sold }
     entry.items.forEach((productId) => { sold[productId] += 1 })
+    const business = this.state.business
+    const boost = business.marketBoost
+    const revenuePercent = business.ownBrandLevel * 5
+      + (business.strategy === 'premium' ? 4 : 0)
+      + business.franchises.length * 2
+      + (boost ? boost.revenuePercent : 0)
+    const earned = Math.round(total * (1 + revenuePercent / 100))
+    const served = this.state.stats.customersServed + 1
+    const nextBoost = boost ? { ...boost, salesRemaining: boost.salesRemaining - 1 } : null
+    const nextBusiness: BusinessState = {
+      ...business,
+      marketBoost: nextBoost && nextBoost.salesRemaining > 0 ? nextBoost : null,
+      marketShare: clamp(business.marketShare + (this.state.customerSatisfaction >= 70 ? 1 : 0) + (business.specialists.marketing ? 1 : 0), 0, 100),
+      reputation: clamp(business.reputation + (business.specialists.quality ? 1 : 0) + (boost?.satisfaction ?? 0), 0, 100),
+    }
+    if (!nextBusiness.activeEvent && served % 18 === 0) {
+      const events: MarketEventId[] = ['heatwave', 'festival', 'shortage', 'recall']
+      nextBusiness.activeEvent = { id: events[(this.state.seed + nextBusiness.eventCursor) % events.length], choice: null }
+      nextBusiness.eventCursor += 1
+    }
     this.setState({
       ...this.state,
       ...changes,
-      money: this.state.money + total,
-      customerSatisfaction: this.nextCustomerSatisfaction(serviceChange + stockChange),
+      money: this.state.money + earned,
+      customerSatisfaction: this.nextCustomerSatisfaction(serviceChange + stockChange + (business.specialists.quality ? 1 : 0)),
       returnableBottles: this.state.returnableBottles + returnedLater,
+      business: nextBusiness,
       stats: {
         ...this.state.stats,
         customersServed: this.state.stats.customersServed + 1,
-        revenue: this.state.stats.revenue + total,
+        revenue: this.state.stats.revenue + earned,
         sold,
       },
     }, true)
