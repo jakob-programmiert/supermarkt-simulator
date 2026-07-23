@@ -575,11 +575,6 @@ export class MarketScene extends Phaser.Scene {
   private spawnCustomer() {
     const roomProducts = gameStore.getCurrentRoomProducts()
     if (!roomProducts.length) return
-    const itemCount = 2 + Math.floor(this.random() * 5)
-    const shoppingList = Array.from(
-      { length: itemCount },
-      () => roomProducts[Math.floor(this.random() * roomProducts.length)],
-    )
     const state = gameStore.getSnapshot()
     const occupiedAvatars = new Set([
       ...state.checkoutQueue.map((entry) => entry.avatar % CUSTOMER_COUNT),
@@ -594,6 +589,12 @@ export class MarketScene extends Phaser.Scene {
       ? availableAvatars
       : Array.from({ length: CUSTOMER_COUNT }, (_, candidate) => candidate)
     const avatar = avatarPool[Math.floor(this.random() * avatarPool.length)]
+    const profile = gameStore.getCustomerProfile(avatar)
+    const itemCount = 2 + profile.itemBonus + Math.floor(this.random() * 4)
+    const shoppingList = Array.from(
+      { length: itemCount },
+      () => roomProducts[Math.floor(this.random() * roomProducts.length)],
+    )
     const id = ++this.customerId
     const depositBottles = state.activeRoom === 'beverage'
       ? gameStore.claimDepositBottles(1 + (id % 5))
@@ -604,6 +605,7 @@ export class MarketScene extends Phaser.Scene {
     this.activeCustomers += 1
     this.activeAvatarCounts.set(avatar, (this.activeAvatarCounts.get(avatar) ?? 0) + 1)
     gameAudio.play('bell')
+    thought.setText(`${profile.icon} ${profile.name}`).setVisible(true)
 
     const goToCheckout = () => {
       if (!basket.length || currentRow === null) {

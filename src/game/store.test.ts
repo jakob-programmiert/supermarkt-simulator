@@ -359,31 +359,4 @@ describe('GameStore economy and inventory', () => {
     expect(deadlocked.getSnapshot().products.bread.storage).toBe(2)
   })
 
-  it('adds a persistent corporate layer above fully automated store work', () => {
-    const storage = new MemoryStorage()
-    const first = new GameStore(storage)
-    first.newGame(42)
-    const raw = JSON.parse(storage.getItem('supermarkt-simulator-save-v1')!)
-    raw.money = 500_000
-    storage.setItem('supermarkt-simulator-save-v1', JSON.stringify(raw))
-
-    const store = new GameStore(storage)
-    expect(store.continueGame()).toBe(true)
-    const demandBeforeStrategy = store.getCustomerDemand()
-    expect(store.chooseBusinessStrategy('regional').ok).toBe(true)
-    expect(store.getCustomerDemand()).toBeGreaterThan(demandBeforeStrategy)
-    expect(store.openFranchise('bio').ok).toBe(true)
-    expect(store.hireSpecialist('marketing').ok).toBe(true)
-    expect(store.upgradeOwnBrand().ok).toBe(true)
-    expect(store.startMarketEvent().ok).toBe(true)
-    expect(store.resolveMarketEvent('safe').ok).toBe(true)
-    expect(store.getSnapshot().business.franchises).toEqual(['bio'])
-    expect(store.getSnapshot().business.ownBrandLevel).toBe(1)
-    expect(store.getSnapshot().business.marketBoost).not.toBeNull()
-
-    const restored = new GameStore(storage)
-    expect(restored.continueGame()).toBe(true)
-    expect(restored.getSnapshot().business.specialists.marketing).toBe(true)
-    expect(restored.getSnapshot().business.strategy).toBe('regional')
-  })
 })

@@ -40,9 +40,8 @@ import {
   type ActionResult,
   type PickupOrderStatus,
   type SelfCheckoutStation,
-  type BusinessStrategy,
-  type FranchiseId,
-  type SpecialistId,
+  type MarketFocus,
+  type SupplierId,
 } from './game/store'
 
 const GameCanvas = lazy(() =>
@@ -250,10 +249,10 @@ function BottomToolbar() {
         gameAudio.play('click')
         gameStore.openModal('helpers')
       }}><span className="tool-button__icon">🧑‍💼</span><span>Helfer{helperCount ? ` (${helperCount})` : ''}</span></button>
-      <button className={`tool-button tool-button--management${state.business.activeEvent ? ' tool-button--management-alert' : ''}`} onClick={() => {
+      <button className={`tool-button tool-button--market${state.market.activeEvent ? ' tool-button--market-alert' : ''}`} onClick={() => {
         gameAudio.play('click')
-        gameStore.openModal('management')
-      }}><span className="tool-button__icon">🏢</span><span>Konzern</span>{state.business.activeEvent && <b className="tool-button__badge">!</b>}</button>
+        gameStore.openModal('market')
+      }}><span className="tool-button__icon">🌟</span><span>Marktleben</span>{state.market.activeEvent && <b className="tool-button__badge">!</b>}</button>
       <button className="tool-button" onClick={() => gameStore.openModal('help')}>
         <span className="tool-button__icon">?</span><span>Hilfe</span>
       </button>
@@ -337,7 +336,7 @@ function OrderModal({ notify }: { notify: (result: ActionResult) => void }) {
       </div>
       <div className="product-grid">
         {products.map((product) => {
-          const price = product.buyPrice * product.orderSize
+          const price = gameStore.getOrderCost(product.id)
           const disabled = state.money < price || used + product.orderSize > capacity
           return (
             <article className="product-card" key={product.id}>
@@ -613,67 +612,41 @@ function HelpersModal({ notify }: { notify: (result: ActionResult) => void }) {
   )
 }
 
-const STRATEGIES: Array<{ id: BusinessStrategy; icon: string; name: string; description: string }> = [
-  { id: 'value', icon: '🛒', name: 'Preisführer', description: '+14 % Nachfrage durch attraktive Preise.' },
-  { id: 'regional', icon: '🌿', name: 'Regionaler Markt', description: '+8 % Nachfrage und ein glaubwürdiger Markenauftritt.' },
-  { id: 'premium', icon: '✨', name: 'Premiumhaus', description: '+4 % Umsatz pro Verkauf statt Rabattschlacht.' },
+const MARKET_FOCUSES: Array<{ id: MarketFocus; icon: string; name: string; text: string }> = [
+  { id: 'family', icon: '👨‍👩‍👧', name: 'Familienmarkt', text: 'Mehr Nachfrage durch volle Regale und große Einkäufe.' },
+  { id: 'value', icon: '🏷️', name: 'Preiswert', text: 'Zieht besonders viele preisbewusste Kunden an.' },
+  { id: 'fresh', icon: '🥬', name: 'Frischemarkt', text: 'Passt zu Kunden, die Wert auf gute Auswahl legen.' },
 ]
 
-const FRANCHISES: Array<{ id: FranchiseId; icon: string; name: string; cost: number; description: string }> = [
-  { id: 'discount', icon: '🏷️', name: 'Nahkauf-Discount', cost: 35_000, description: 'Preisbewusste Kundschaft im Nachbarviertel.' },
-  { id: 'bio', icon: '🥬', name: 'Bio-Markt', cost: 50_000, description: 'Mehr Ruf durch nachhaltiges Sortiment.' },
-  { id: 'express', icon: '🚉', name: 'Express-Shop', cost: 65_000, description: 'Schnelle Einkäufe an einem belebten Standort.' },
-  { id: 'premium', icon: '🧀', name: 'Feinkost-Filiale', cost: 85_000, description: 'Hohe Ansprüche, starkes Markenbild.' },
+const SUPPLIERS: Array<{ id: SupplierId; icon: string; name: string; text: string }> = [
+  { id: 'reliable', icon: '🚚', name: 'Zuverlässig', text: 'Der sichere Standard für deinen Laden.' },
+  { id: 'wholesale', icon: '📦', name: 'Großhandel', text: '15 % günstigere Bestellungen.' },
+  { id: 'local', icon: '🌿', name: 'Regional', text: 'Kostet 8 % mehr, passt aber zum Frischemarkt.' },
 ]
 
-const SPECIALISTS: Array<{ id: SpecialistId; icon: string; name: string; cost: number; description: string }> = [
-  { id: 'logistics', icon: '🚚', name: 'Logistikleitung', cost: 24_000, description: 'Sichert deine Lieferkette für den Ausbau.' },
-  { id: 'marketing', icon: '📣', name: 'Marketing', cost: 30_000, description: '+12 % Nachfrage und schnellerer Marktanteil.' },
-  { id: 'quality', icon: '🔎', name: 'Qualitätsleitung', cost: 32_000, description: 'Jeder Verkauf steigert Ruf und Zufriedenheit.' },
-  { id: 'analytics', icon: '📊', name: 'Marktanalyse', cost: 28_000, description: 'Macht Chancen und Großaufträge transparent.' },
-]
-
-const EVENT_COPY = {
-  heatwave: { title: 'Hitzewelle', text: 'Getränke und schnelle Erfrischung werden plötzlich gefragt.' },
-  festival: { title: 'Stadtfest', text: 'Tausende Gäste kommen in deinen Bezirk.' },
-  shortage: { title: 'Lieferengpass', text: 'Eine wichtige Lieferroute ist überlastet.' },
-  recall: { title: 'Produktrückruf', text: 'Die Kundschaft erwartet eine glaubwürdige Reaktion.' },
+const EVENT_TEXT = {
+  heatwave: ['Hitzewelle', 'Kalte Getränke und schnelle Einkäufe sind plötzlich besonders gefragt.'],
+  festival: ['Stadtfest', 'Viele neue Menschen kommen heute in dein Viertel.'],
+  delivery: ['Lieferverzögerung', 'Ein Lkw steckt fest. Wie reagierst du auf die knappen Vorräte?'],
+  power: ['Stromausfall', 'Die Kühlung braucht schnell eine Lösung.'],
 } as const
 
-function ManagementModal({ notify }: { notify: (result: ActionResult) => void }) {
+function MarketLifeModal({ notify }: { notify: (result: ActionResult) => void }) {
   const state = useGameState()
-  const business = state.business
-  const ownBrandPrice = [25_000, 55_000, 100_000][business.ownBrandLevel]
-  const progress: Record<string, string> = {
-    neighborhood: `${state.stats.customersServed}/50 Kunden · Zufriedenheit ${state.customerSatisfaction}/75`,
-    supplier: `${state.rooms.beverage && state.rooms.fresh ? 'beide Abteilungen' : 'Abteilungen fehlen'} · Umsatz ${formatMoney(state.stats.revenue)} / ${formatMoney(120_000)}`,
-    leader: `${business.marketShare}/18 % Marktanteil · ${business.franchises.length}/2 Filialen`,
-  }
+  const market = state.market
+  const season = gameStore.getSeason()
   const act = (action: () => ActionResult) => {
     const result = action()
     gameAudio.play(result.ok ? 'success' : 'click')
     notify(result)
   }
-  return <ModalShell title="Konzernzentrale" icon="🏢">
-    <div className="management-hero">
-      <div><small>DEIN HANDELSUNTERNEHMEN</small><b>{business.strategy ? STRATEGIES.find(({ id }) => id === business.strategy)?.name : 'Konzept gesucht'}</b><span>Ruf {business.reputation}/100 · Marktanteil {business.marketShare} %</span></div>
-      <div className="management-hero__numbers"><b>{business.franchises.length + 1}</b><small>Standorte</small><b>{business.prestige}</b><small>Regionen</small></div>
-    </div>
-    {!business.strategy ? <section className="management-section">
-      <h3>1. Positioniere dein Unternehmen</h3><p>Wähle einmalig, wie dein Konzern im Wettbewerb gewinnen soll. Marktanalyse: {formatMoney(15_000)}.</p>
-      <div className="management-grid management-grid--three">{STRATEGIES.map((strategy) => <button className="management-choice" key={strategy.id} onClick={() => act(() => gameStore.chooseBusinessStrategy(strategy.id))}><span>{strategy.icon}</span><b>{strategy.name}</b><small>{strategy.description}</small><strong>{formatMoney(15_000)}</strong></button>)}</div>
-    </section> : <>
-      <section className="management-section"><h3>Marktlage & Entscheidungen</h3>
-        {business.activeEvent ? <article className="market-event"><span>⚠️</span><div><b>{EVENT_COPY[business.activeEvent.id].title}</b><p>{EVENT_COPY[business.activeEvent.id].text}</p></div><footer><button onClick={() => act(() => gameStore.resolveMarketEvent('safe'))}>Sicher reagieren<small>7,50 € · mehr Vertrauen</small></button><button onClick={() => act(() => gameStore.resolveMarketEvent('bold'))}>Offensive starten<small>Risiko · mehr Umsatz</small></button></footer></article>
-          : business.marketBoost ? <div className="management-status">📈 <b>{business.marketBoost.label}</b> wirkt noch für {business.marketBoost.salesRemaining} Verkäufe: +{business.marketBoost.revenuePercent} % Umsatz.</div>
-            : <button className="management-action" onClick={() => act(() => gameStore.startMarketEvent())}>🔭 Nächste Marktchance analysieren</button>}
-      </section>
-      <section className="management-section"><h3>Filialnetz ({business.franchises.length}/3)</h3><div className="management-grid management-grid--two">{FRANCHISES.map((franchise) => { const open = business.franchises.includes(franchise.id); return <article className={`management-card${open ? ' management-card--done' : ''}`} key={franchise.id}><span>{franchise.icon}</span><div><b>{franchise.name}</b><small>{franchise.description}</small></div><button disabled={open || business.franchises.length >= 3} onClick={() => act(() => gameStore.openFranchise(franchise.id))}>{open ? '✓ Eröffnet' : formatMoney(franchise.cost)}</button></article> })}</div></section>
-      <section className="management-section"><h3>Führungsteam</h3><div className="management-grid management-grid--two">{SPECIALISTS.map((specialist) => { const hired = business.specialists[specialist.id]; return <article className={`management-card${hired ? ' management-card--done' : ''}`} key={specialist.id}><span>{specialist.icon}</span><div><b>{specialist.name}</b><small>{specialist.description}</small></div><button disabled={hired} onClick={() => act(() => gameStore.hireSpecialist(specialist.id))}>{hired ? '✓ Im Team' : formatMoney(specialist.cost)}</button></article> })}</div></section>
-      <section className="management-section management-section--ownbrand"><div><h3>Eigenmarke · Stufe {business.ownBrandLevel}/3</h3><p>Sie macht jeden Verkauf um {business.ownBrandLevel * 5} % profitabler.</p></div><button disabled={business.ownBrandLevel >= 3} onClick={() => act(() => gameStore.upgradeOwnBrand())}>{business.ownBrandLevel >= 3 ? 'Maximum erreicht' : `Entwickeln · ${formatMoney(ownBrandPrice!)}`}</button></section>
-      <section className="management-section"><h3>Großaufträge</h3><div className="contract-list">{[['neighborhood', 'Nachbarschaftsauftrag', '30.000 €'], ['supplier', 'Regionaler Liefervertrag', '55.000 €'], ['leader', 'Bezirkspartnerschaft', '90.000 €']].map(([id, name, reward]) => { const done = business.completedContracts.includes(id); return <article key={id}><div><b>{name}</b><small>{progress[id]}</small></div><button disabled={done} onClick={() => act(() => gameStore.claimBusinessContract(id))}>{done ? '✓ Erledigt' : reward}</button></article> })}</div></section>
-      <section className="management-section prestige-card"><div><h3>Neue Region</h3><p>Starte einen neuen Markt mit dauerhafter Nachfrage-Belohnung. Erfordert zwei Filialen, Eigenmarke Stufe 2 und {formatMoney(250_000)}.</p></div><button onClick={() => act(() => gameStore.startNewRegion())}>🌍 Neue Region gründen</button></section>
-    </>}
+  const branchCost = [40_000, 75_000, 120_000][market.branchLevel]
+  return <ModalShell title="Marktleben" icon="🌟">
+    <div className="marketlife-hero"><span>{season.icon}</span><div><small>AKTUELLE JAHRESZEIT</small><b>{season.name}</b><p>{season.demand}</p></div><strong>{market.branchLevel + 1}<small> Standorte</small></strong></div>
+    {!market.focus ? <section className="marketlife-section"><h3>Deine Spezialisierung</h3><p>Lege fest, wofür dein Laden bekannt sein soll.</p><div className="marketlife-grid">{MARKET_FOCUSES.map((focus) => <button key={focus.id} onClick={() => act(() => gameStore.chooseMarketFocus(focus.id))}><span>{focus.icon}</span><b>{focus.name}</b><small>{focus.text}</small><strong>50,00 €</strong></button>)}</div></section> : <section className="marketlife-section"><h3>Dein Markt wächst</h3><div className="marketlife-row"><div><b>{MARKET_FOCUSES.find(({ id }) => id === market.focus)?.name}</b><small>Deine Spezialisierung bringt dauerhaft mehr Kundschaft.</small></div><button disabled={branchCost === undefined} onClick={() => act(() => gameStore.openNeighborhoodStore())}>{branchCost === undefined ? 'Alle Standorte eröffnet' : `Neuer Standort · ${formatMoney(branchCost)}`}</button></div></section>}
+    <section className="marketlife-section"><h3>Lieferanten</h3><div className="marketlife-grid">{SUPPLIERS.map((supplier) => <button className={market.supplier === supplier.id ? 'active' : ''} key={supplier.id} onClick={() => act(() => gameStore.chooseSupplier(supplier.id))}><span>{supplier.icon}</span><b>{supplier.name}</b><small>{supplier.text}</small></button>)}</div></section>
+    <section className="marketlife-section"><h3>Mitarbeiter entwickeln</h3><div className="marketlife-staff">{(['restock', 'cashier', 'order', 'pickup'] as HelperId[]).map((id) => <article key={id}><span>{HELPER_INFO[id].icon}</span><div><b>{HELPER_INFO[id].name}</b><small>Schulung {market.staffTraining[id]}/2</small></div><button disabled={!state.helpers[id] || market.staffTraining[id] >= 2} onClick={() => act(() => gameStore.trainHelper(id))}>{state.helpers[id] ? market.staffTraining[id] >= 2 ? 'Fertig' : 'Schulen' : 'Erst einstellen'}</button></article>)}</div></section>
+    <section className="marketlife-section"><h3>Überraschungen im Laden</h3>{market.activeEvent ? <article className="marketlife-event"><span>⚠️</span><div><b>{EVENT_TEXT[market.activeEvent][0]}</b><small>{EVENT_TEXT[market.activeEvent][1]}</small></div><button onClick={() => act(() => gameStore.resolveMarketEvent(true))}>Sicher lösen<br /><small>30,00 €</small></button><button onClick={() => act(() => gameStore.resolveMarketEvent(false))}>Wagnis</button></article> : <button className="marketlife-action" onClick={() => act(() => gameStore.startMarketEvent())}>🔭 Nächste Überraschung ansehen</button>}</section>
   </ModalShell>
 }
 
@@ -940,6 +913,7 @@ function CheckoutModal({ notify }: { notify: (result: ActionResult) => void }) {
   }, [entry?.id])
 
   if (!entry || state.helpers.cashier) return null
+  const profile = gameStore.getCustomerProfile(entry.avatar)
   const duration = gameStore.getScanDuration()
   const subtotal = getCheckoutSubtotal(entry, state.prices)
   const voucherValue = Math.min(subtotal, getDepositVoucherValue(entry))
@@ -1003,8 +977,9 @@ function CheckoutModal({ notify }: { notify: (result: ActionResult) => void }) {
         <div className="checkout-customer">
           <CustomerAvatar index={entry.avatar} large />
           <div>
-            <small>KUNDE AN DER KASSE</small>
+            <small>{profile.icon} {profile.name.toUpperCase()} AN DER KASSE</small>
             <b>{entry.items.length === 1 ? 'Ich habe einen Artikel.' : `Ich habe ${entry.items.length} Artikel.`}</b>
+            <small>{profile.tip}</small>
             {voucherValue > 0 && <small>Außerdem habe ich einen Pfandbon über {formatMoney(voucherValue)}.</small>}
           </div>
           {state.checkoutQueue.length > 1 && <span className="queue-badge">+{state.checkoutQueue.length - 1} wartet</span>}
@@ -1138,7 +1113,7 @@ function GameScreen({ notify }: { notify: (result: ActionResult) => void }) {
       {state.modal === 'rooms' && <RoomsModal notify={notify} />}
       {state.modal === 'pickup' && <PickupModal notify={notify} />}
       {state.modal === 'helpers' && <HelpersModal notify={notify} />}
-      {state.modal === 'management' && <ManagementModal notify={notify} />}
+      {state.modal === 'market' && <MarketLifeModal notify={notify} />}
       {state.modal === 'help' && <HelpModal />}
       <CheckoutModal notify={notify} />
     </main>
